@@ -51,12 +51,23 @@ class SaasAutoLoginController(http.Controller):
 
         return True, max_attempts - attempts - 1
 
-    def _verify_admin_password(self, admin_password, db_name):
+    def _verify_admin_password(self, db_name, admin_password):
         """
-        Verify admin password using direct security library
+        Verify admin password using Odoo registry and environment
+        Compatible with Odoo 19
         """
         try:
-            uid = security.login(db_name, 'admin', admin_password)
+            import odoo
+            from odoo.exceptions import AccessDenied
+
+            # الدخول مباشرة إلى قاعدة البيانات للتحقق
+            registry = odoo.registry(db_name)
+            with registry.cursor() as cr:
+                env = odoo.api.Environment(cr, odoo.SUPERUSER_ID, {})
+
+                # التحقق من بيانات الأدمن باستخدام الدالة القياسية authenticate
+                uid = env['res.users'].authenticate(db_name, 'admin', admin_password, {'interactive': False})
+
             if uid:
                 _logger.info("Admin password verified directly for database: %s", db_name)
                 return True
@@ -64,20 +75,12 @@ class SaasAutoLoginController(http.Controller):
                 _logger.warning("Invalid admin password for database: %s", db_name)
                 return False
 
-        except AccessDenied:
+        except odoo.exceptions.AccessDenied:
             _logger.warning("Authentication failed: Access Denied")
             return False
         except Exception as e:
             _logger.error("Error verifying admin password: %s", str(e))
             return False
-
-    def _get_client_ip(self):
-        """Get real client IP"""
-        forwarded_for = request.httprequest.headers.get('X-Forwarded-For')
-        if forwarded_for:
-            return forwarded_for.split(',')[0].strip()
-
-        return request.httprequest.remote_addr
 
     def _is_ip_allowed(self, ip):
         """
