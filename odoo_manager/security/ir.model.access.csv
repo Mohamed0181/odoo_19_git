@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_saas_user_limit_control_admin,saas.user.limit.control admin,model_saas_user_limit_control,base.group_system,1,1,1,0
+access_saas_user_limit_control_user,saas.user.limit.control user,model_saas_user_limit_control,base.group_user,1,0,0,0
+access_saas_auth_token_system,saas.auth.token.system,model_saas_auth_token,,1,1,1,1
+
