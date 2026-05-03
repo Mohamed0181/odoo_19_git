@@ -2,7 +2,8 @@
 
 from odoo import http
 from odoo.http import request
-import secrets
+from odoo.service import security
+from odoo.exceptions import AccessDenied
 import logging
 import werkzeug
 import json
@@ -10,7 +11,7 @@ from datetime import datetime, timedelta
 
 _logger = logging.getLogger(__name__)
 
-# ✅ Rate Limiting Storage
+# Rate Limiting Storage
 RATE_LIMIT_STORAGE = {}
 
 
@@ -18,32 +19,32 @@ class SaasAutoLoginController(http.Controller):
 
     def _check_rate_limit(self, key, max_attempts=5, window_minutes=5):
         """
-        التحقق من Rate Limiting
+        Check Rate Limiting
 
         Args:
-            key: المفتاح (IP أو user_id)
-            max_attempts: عدد المحاولات المسموحة
-            window_minutes: النافذة الزمنية بالدقائق
+            key: Identifier (IP or user_id)
+            max_attempts: Maximum allowed attempts
+            window_minutes: Time window in minutes
 
         Returns:
             (allowed: bool, remaining: int)
         """
         now = datetime.now()
 
-        # تنظيف السجلات القديمة
+        # Clean old records
         if key in RATE_LIMIT_STORAGE:
             RATE_LIMIT_STORAGE[key] = [
                 timestamp for timestamp in RATE_LIMIT_STORAGE[key]
                 if now - timestamp < timedelta(minutes=window_minutes)
             ]
 
-        # التحقق من العدد
+        # Check attempts
         attempts = len(RATE_LIMIT_STORAGE.get(key, []))
 
         if attempts >= max_attempts:
             return False, 0
 
-        # تسجيل المحاولة الجديدة
+        # Register new attempt
         if key not in RATE_LIMIT_STORAGE:
             RATE_LIMIT_STORAGE[key] = []
         RATE_LIMIT_STORAGE[key].append(now)
@@ -52,51 +53,26 @@ class SaasAutoLoginController(http.Controller):
 
     def _verify_admin_password(self, admin_password, db_name):
         """
-        التحقق من كلمة مرور الأدمن - محدّث لـ Odoo 19
-
-        Args:
-            admin_password: كلمة المرور
-            db_name: اسم قاعدة البيانات
-
-        Returns:
-            bool: True إذا كانت كلمة المرور صحيحة
+        Verify admin password using direct security library
         """
         try:
-            # ✅ في Odoo 19، نستخدم authenticate API
-            import xmlrpc.client
-
-            # الحصول على الـ URL الحالي
-            base_url = request.httprequest.host_url.rstrip('/')
-
-            # محاولة المصادقة
-            common = xmlrpc.client.ServerProxy(f'{base_url}/xmlrpc/2/common')
-
-            try:
-                uid = common.authenticate(
-                    db_name,
-                    'admin',  # اسم المستخدم
-                    admin_password,
-                    {}
-                )
-
-                if uid:
-                    _logger.info("✅ Admin password verified for database: %s", db_name)
-                    return True
-                else:
-                    _logger.warning("⚠️ Invalid admin password for database: %s", db_name)
-                    return False
-
-            except Exception as auth_error:
-                _logger.warning("⚠️ Authentication failed: %s", str(auth_error))
+            uid = security.login(db_name, 'admin', admin_password)
+            if uid:
+                _logger.info("Admin password verified directly for database: %s", db_name)
+                return True
+            else:
+                _logger.warning("Invalid admin password for database: %s", db_name)
                 return False
 
+        except AccessDenied:
+            _logger.warning("Authentication failed: Access Denied")
+            return False
         except Exception as e:
-            _logger.error("❌ Error verifying admin password: %s", str(e))
+            _logger.error("Error verifying admin password: %s", str(e))
             return False
 
     def _get_client_ip(self):
-        """الحصول على IP العميل الحقيقي"""
-        # تحقق من X-Forwarded-For (في حالة استخدام Proxy/Load Balancer)
+        """Get real client IP"""
         forwarded_for = request.httprequest.headers.get('X-Forwarded-For')
         if forwarded_for:
             return forwarded_for.split(',')[0].strip()
@@ -105,25 +81,14 @@ class SaasAutoLoginController(http.Controller):
 
     def _is_ip_allowed(self, ip):
         """
-        التحقق من أن الـ IP مسموح له
-
-        يمكنك تخصيص هذه الدالة حسب احتياجك:
-        - السماح لـ IPs محددة فقط
-        - السماح لـ ranges معينة
-        - الحظر من blacklist
+        Check if IP is allowed
         """
-        # ✅ مثال 1: السماح لأي IP (غير آمن!)
-        # return True
-
-        # ✅ مثال 2: السماح لـ localhost و IPs محددة
         allowed_ips = [
             '127.0.0.1',
             '::1',
             'localhost',
-            # أضف IPs السيرفرات بتاعتك هنا
         ]
 
-        # جلب IPs المسموحة من System Parameters
         try:
             allowed_param = request.env['ir.config_parameter'].sudo().get_param(
                 'saas.autologin.allowed_ips', ''
@@ -133,7 +98,6 @@ class SaasAutoLoginController(http.Controller):
         except:
             pass
 
-        # التحقق من الشبكات المحلية
         if ip.startswith(('192.168.', '10.', '172.16.', '172.17.')):
             return True
 
@@ -141,29 +105,29 @@ class SaasAutoLoginController(http.Controller):
 
     @http.route('/saas/generate_auth_link', type='http', auth='none', methods=['POST'], csrf=False)
     def generate_auth_link(self, **kwargs):
-        """توليد رابط تسجيل دخول تلقائي - نسخة آمنة"""
+        """Generate auto login link"""
         try:
             client_ip = self._get_client_ip()
-            _logger.info("🔐 Auth link request from IP: %s", client_ip)
+            _logger.info("Auth link request from IP: %s", client_ip)
 
-            # ✅ 1. التحقق من الـ IP
+            # 1. Check IP
             if not self._is_ip_allowed(client_ip):
-                _logger.warning("🚫 Blocked request from unauthorized IP: %s", client_ip)
+                _logger.warning("Blocked request from unauthorized IP: %s", client_ip)
                 return request.make_json_response({
                     'success': False,
                     'error': 'Unauthorized IP address'
                 }, status=403)
 
-            # ✅ 2. Rate Limiting
+            # 2. Rate Limiting
             allowed, remaining = self._check_rate_limit(client_ip, max_attempts=10, window_minutes=5)
             if not allowed:
-                _logger.warning("🚫 Rate limit exceeded for IP: %s", client_ip)
+                _logger.warning("Rate limit exceeded for IP: %s", client_ip)
                 return request.make_json_response({
                     'success': False,
                     'error': 'Too many requests. Please try again later.'
                 }, status=429)
 
-            # قراءة البيانات
+            # Read data
             user_id = None
             admin_password = None
 
@@ -172,17 +136,17 @@ class SaasAutoLoginController(http.Controller):
                     data = json.loads(request.httprequest.data.decode('utf-8'))
                     user_id = data.get('user_id')
                     admin_password = data.get('admin_password')
-                    _logger.info("📥 Data from JSON body: user_id=%s", user_id)
+                    _logger.info("Data from JSON body: user_id=%s", user_id)
                 except:
                     pass
 
             if not user_id:
                 user_id = kwargs.get('user_id')
                 admin_password = kwargs.get('admin_password')
-                _logger.info("📥 Data from kwargs: user_id=%s", user_id)
+                _logger.info("Data from kwargs: user_id=%s", user_id)
 
             if not user_id or not admin_password:
-                _logger.error("❌ Missing user_id or admin_password")
+                _logger.error("Missing user_id or admin_password")
                 return request.make_json_response({
                     'success': False,
                     'error': 'Missing user_id or admin_password'
@@ -191,42 +155,42 @@ class SaasAutoLoginController(http.Controller):
             user_id = int(user_id)
             current_db = request.env.cr.dbname
 
-            # ✅ 3. التحقق من كلمة مرور الأدمن (مهم جداً!)
+            # 3. Verify admin password
             if not self._verify_admin_password(admin_password, current_db):
-                _logger.error("❌ Invalid admin password from IP: %s", client_ip)
+                _logger.error("Invalid admin password from IP: %s", client_ip)
                 return request.make_json_response({
                     'success': False,
                     'error': 'Invalid admin credentials'
                 }, status=401)
 
-            # التحقق من المستخدم
+            # Check User
             user = request.env['res.users'].sudo().browse(user_id)
             if not user.exists():
-                _logger.error("❌ User ID %d not found", user_id)
+                _logger.error("User ID %d not found", user_id)
                 return request.make_json_response({
                     'success': False,
                     'error': f'User ID {user_id} not found'
                 })
 
             if not user.active:
-                _logger.error("❌ User ID %d is inactive", user_id)
+                _logger.error("User ID %d is inactive", user_id)
                 return request.make_json_response({
                     'success': False,
                     'error': 'User is inactive'
                 })
 
-            # ✅ 4. توليد token مع مدة قصيرة (2 دقيقة فقط)
+            # 4. Generate token with a short expiration (2 minutes)
             auth_token = request.env['saas.auth.token'].sudo().generate_token(
                 user_id=user_id,
                 user_login=user.login,
                 db_name=current_db,
-                expires_minutes=2  # ✅ تقليل المدة لـ 2 دقيقة
+                expires_minutes=2
             )
 
             base = request.httprequest.host_url.rstrip('/')
             auth_url = f"{base}/saas/autologin?token={auth_token.token}"
 
-            _logger.info("✅ Auth token generated for user %s (ID: %d) from IP: %s",
+            _logger.info("Auth token generated for user %s (ID: %d) from IP: %s",
                          user.login, user_id, client_ip)
 
             return request.make_json_response({
@@ -237,7 +201,7 @@ class SaasAutoLoginController(http.Controller):
             })
 
         except Exception as e:
-            _logger.error("❌ Generate link failed: %s", str(e), exc_info=True)
+            _logger.error("Generate link failed: %s", str(e), exc_info=True)
             return request.make_json_response({
                 'success': False,
                 'error': 'Internal server error'
@@ -245,75 +209,73 @@ class SaasAutoLoginController(http.Controller):
 
     @http.route('/saas/autologin', type='http', auth='public', methods=['GET'], csrf=False)
     def autologin(self, token, **kwargs):
-        """تسجيل الدخول التلقائي - نسخة آمنة"""
+        """Auto login"""
         try:
             client_ip = self._get_client_ip()
-            _logger.info("🔑 Autologin attempt from IP: %s with token: %s...", client_ip, token[:10])
+            _logger.info("Autologin attempt from IP: %s with token: %s...", client_ip, str(token)[:10])
 
-            # ✅ Rate Limiting على الـ autologin أيضاً
+            # Rate Limiting for autologin
             allowed, remaining = self._check_rate_limit(f"autologin_{client_ip}", max_attempts=20, window_minutes=5)
             if not allowed:
-                _logger.warning("🚫 Autologin rate limit exceeded for IP: %s", client_ip)
+                _logger.warning("Autologin rate limit exceeded for IP: %s", client_ip)
                 return request.render('web.login', {
-                    'error': 'عدد كبير من المحاولات. حاول مرة أخرى لاحقاً.'
+                    'error': 'Too many attempts. Please try again later.'
                 })
 
-            # التحقق من الـ token
+            # Verify token
             token_data = request.env['saas.auth.token'].sudo().validate_and_consume_token(token)
 
             if not token_data:
-                _logger.warning("⚠️ Invalid/expired token from IP: %s", client_ip)
+                _logger.warning("Invalid/expired token from IP: %s", client_ip)
                 return request.render('web.login', {
-                    'error': 'رمز التسجيل غير صالح أو منتهي الصلاحية'
+                    'error': 'Invalid or expired login token'
                 })
 
             user_id = token_data['user_id']
             user_login = token_data['user_login']
             db_name = token_data['db_name']
 
-            # التحقق من المستخدم مرة أخرى
+            # Check User again
             user = request.env['res.users'].sudo().browse(user_id)
             if not user.exists() or not user.active:
-                _logger.error("❌ User not found or inactive")
+                _logger.error("User not found or inactive")
                 return request.render('web.login', {
-                    'error': 'المستخدم غير موجود أو غير نشط'
+                    'error': 'User not found or inactive'
                 })
 
-            # تسجيل الدخول
+            # Perform login
             request.session.logout(keep_db=True)
 
             request.session.uid = user_id
             request.session.login = user_login
             request.session.db = db_name
-            request.session.session_token = secrets.token_hex(16)
-            request.session.context = {
-                'lang': user.lang or 'en_US',
-                'tz': user.tz or 'UTC',
-                'uid': user_id,
-            }
 
+            # Odoo 19 compliant session setup
             request.update_env(user=user_id)
+            request.session.session_token = security.compute_session_token(request.session, request.env)
+            request.session.context = request.env.user.context_get()
+
             request.session.modified = True
 
-            _logger.info("✅ Autologin SUCCESS for user: %s (ID: %d) from IP: %s",
+            _logger.info("Autologin SUCCESS for user: %s (ID: %d) from IP: %s",
                          user_login, user_id, client_ip)
 
             return werkzeug.utils.redirect('/web', 303)
 
         except Exception as e:
-            _logger.error("❌ Autologin FAILED: %s", str(e), exc_info=True)
+            _logger.error("Autologin FAILED: %s", str(e), exc_info=True)
             return request.render('web.login', {
-                'error': 'فشل تسجيل الدخول'
+                'error': 'Login failed'
             })
 
     @http.route('/saas/cleanup_tokens', type='json', auth='user', methods=['POST'])
     def cleanup_expired_tokens(self):
-        """تنظيف الـ tokens المنتهية"""
+        """Cleanup expired tokens"""
         try:
             count = request.env['saas.auth.token'].sudo().cleanup_expired_tokens()
             remaining = request.env['saas.auth.token'].sudo().search_count([])
 
-            _logger.info("🧹 Cleaned %d expired tokens, %d remaining", count, remaining)
+            _logger.info("Cleaned %d expired tokens, %d remaining", count, remaining)
 
             return {
                 'success': True,
@@ -321,5 +283,5 @@ class SaasAutoLoginController(http.Controller):
                 'remaining': remaining
             }
         except Exception as e:
-            _logger.error("❌ Cleanup failed: %s", str(e))
+            _logger.error("Cleanup failed: %s", str(e))
             return {'success': False, 'error': str(e)}
