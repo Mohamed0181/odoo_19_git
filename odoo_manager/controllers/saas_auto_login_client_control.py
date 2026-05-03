@@ -245,65 +245,70 @@ class SaasAutoLoginController(http.Controller):
 
     @http.route('/saas/autologin', type='http', auth='public', methods=['GET'], csrf=False)
     def autologin(self, token, **kwargs):
-        """تسجيل الدخول التلقائي - نسخة آمنة"""
+        """Auto login compatible with Odoo 19"""
         try:
             client_ip = self._get_client_ip()
             _logger.info("🔑 Autologin attempt from IP: %s with token: %s...", client_ip, token[:10])
 
-            # ✅ Rate Limiting على الـ autologin أيضاً
+            # Check Rate Limiting
             allowed, remaining = self._check_rate_limit(f"autologin_{client_ip}", max_attempts=20, window_minutes=5)
             if not allowed:
                 _logger.warning("🚫 Autologin rate limit exceeded for IP: %s", client_ip)
                 return request.render('web.login', {
-                    'error': 'عدد كبير من المحاولات. حاول مرة أخرى لاحقاً.'
+                    'error': 'Too many attempts. Please try again later.'
                 })
 
-            # التحقق من الـ token
+            # Validate token
             token_data = request.env['saas.auth.token'].sudo().validate_and_consume_token(token)
 
             if not token_data:
                 _logger.warning("⚠️ Invalid/expired token from IP: %s", client_ip)
                 return request.render('web.login', {
-                    'error': 'رمز التسجيل غير صالح أو منتهي الصلاحية'
+                    'error': 'Invalid or expired login token'
                 })
 
             user_id = token_data['user_id']
             user_login = token_data['user_login']
             db_name = token_data['db_name']
 
-            # التحقق من المستخدم مرة أخرى
+            # Check user
             user = request.env['res.users'].sudo().browse(user_id)
             if not user.exists() or not user.active:
                 _logger.error("❌ User not found or inactive")
                 return request.render('web.login', {
-                    'error': 'المستخدم غير موجود أو غير نشط'
+                    'error': 'User not found or inactive'
                 })
 
-            # تسجيل الدخول
+            # Logout current user if any
             request.session.logout(keep_db=True)
 
+            # Establish Odoo 19 Session
             request.session.uid = user_id
             request.session.login = user_login
             request.session.db = db_name
-            request.session.session_token = secrets.token_hex(16)
-            request.session.context = {
-                'lang': user.lang or 'en_US',
-                'tz': user.tz or 'UTC',
-                'uid': user_id,
-            }
 
+            # Update environment to get correct context
             request.update_env(user=user_id)
-            request.session.modified = True
+
+            # In Odoo 19, session context is essential
+            request.session.context = request.env.user.context_get()
+
+            # Generate session token properly
+            from odoo.service import security
+            request.session.session_token = security.compute_session_token(request.session, request.env)
+
+            # NOTE: We removed request.session.modified = True as it causes AttributeError in Odoo 19
 
             _logger.info("✅ Autologin SUCCESS for user: %s (ID: %d) from IP: %s",
                          user_login, user_id, client_ip)
 
+            # Redirect to backend
             return werkzeug.utils.redirect('/web', 303)
 
         except Exception as e:
             _logger.error("❌ Autologin FAILED: %s", str(e), exc_info=True)
             return request.render('web.login', {
-                'error': 'فشل تسجيل الدخول'
+                'error': 'Login failed'
             })
 
     @http.route('/saas/cleanup_tokens', type='json', auth='user', methods=['POST'])
