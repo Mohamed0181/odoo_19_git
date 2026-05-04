@@ -4,9 +4,10 @@
         <xpath expr="//body" position="inside">
             <t t-set="saas_status" t-value="request.env['ir.config_parameter'].sudo().get_param('saas.subscription_status', 'active')"/>
 
-            <!-- Show banner only if logged in and status is not active -->
+            <!-- Display banner and restrictions only if status is not active[cite: 1] -->
             <t t-if="saas_status != 'active' and request.session.uid">
-                <!-- Red Maintenance Banner -->
+
+                <!-- Red Support Banner at the very top -->
                 <div id="saas_expired_banner"
                      style="
                         position: fixed;
@@ -18,42 +19,40 @@
                         padding: 10px 0;
                         font-size: 14px;
                         font-weight: bold;
-                        z-index: 999999;
+                        z-index: 10001;
                         display: flex;
                         justify-content: center;
                         align-items: center;
                         gap: 15px;
-                        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
                      ">
                     <span>⚠️ Subscription Suspended - Full access is restricted</span>
-                    <a href="mailto:support@optimum.com"
-                       style="color: white; text-decoration: underline; font-size: 12px;">
-                        Contact Support
-                    </a>
+                    <a href="mailto:support@optimum.com" style="color: white; text-decoration: underline;">Contact Support</a>
                 </div>
 
                 <style>
-                    /* Push Navbar down for the banner */
+                    /* 1. Push Navbar down to sit below our red banner[cite: 1] */
                     .o_navbar {
                         top: 40px !important;
+                        pointer-events: auto !important; /* Enable navbar clicks[cite: 1] */
+                        z-index: 10000 !important;
                     }
 
-                    /* Push main content down */
-                    .o_action_manager, .o_content {
+                    /* 2. Disable interaction with the entire app content[cite: 1] */
+                    .o_action_manager, .o_content, .o_main_navbar + div {
                         margin-top: 40px !important;
-                        pointer-events: none !important; /* Disable all clicks in content */
-                        opacity: 0.6;
+                        pointer-events: none !important; /* Block all clicks in app content[cite: 1] */
+                        user-select: none;
+                        opacity: 0.7;
                     }
 
-                    /* KEEP NAVBAR WORKING: Ensure navbar stays clickable for Logout[cite: 1] */
-                    .o_navbar {
+                    /* 3. Explicitly re-enable clicks for the Navbar and its menus[cite: 1] */
+                    .o_navbar *, .o_user_menu, .dropdown-menu {
                         pointer-events: auto !important;
-                        z-index: 1000;
                     }
 
-                    /* Ensure the user menu dropdown is visible and clickable */
-                    .o_user_menu, .dropdown-menu {
-                        pointer-events: auto !important;
+                    /* Adjust body to prevent scroll overlap if necessary[cite: 1] */
+                    body {
+                        padding-top: 40px !important;
                     }
                 </style>
             </t>
