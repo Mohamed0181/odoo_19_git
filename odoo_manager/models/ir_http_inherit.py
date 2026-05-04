@@ -11,7 +11,45 @@ ALWAYS_ALLOWED_PATHS = (
     '/web/login',
     '/web/session/logout',
     '/web/session/authenticate',
+    '/web/dataset/call_kw/res.users/read',
+    '/web/dataset/call_kw/res.users/context_get',
 )
+
+# JSON-RPC methods that are safe to allow even when stopped (read-only)
+ALLOWED_METHODS_WHEN_STOPPED = {
+    'read',
+    'search_read',
+    'search',
+    'search_count',
+    'fields_get',
+    'onchange',
+    'default_get',
+    'get_views',
+    'load_views',
+    'get_filters',
+    'name_search',
+    'name_get',
+    'context_get',
+    'action_load',
+    'read_group',
+    'fields_view_get',
+    'web_search_read',
+}
+
+# Methods that must be blocked when stopped
+BLOCKED_METHODS_WHEN_STOPPED = {
+    'write',
+    'create',
+    'unlink',
+    'action_done',
+    'action_confirm',
+    'action_cancel',
+    'action_post',
+    'action_validate',
+    'button_confirm',
+    'button_validate',
+    'button_cancel',
+}
 
 
 class IrHttp(models.AbstractModel):
@@ -20,33 +58,56 @@ class IrHttp(models.AbstractModel):
     @classmethod
     def _pre_dispatch(cls, rule, args):
         """
-        Odoo 19 compatible pre_dispatch.
-        Blocks modifications if status is 'stopped'.
+        Odoo 18/19 compatible pre_dispatch.
+        Blocks write operations when subscription status is 'stopped'.
+        Navbar and logout remain fully accessible at all times.
         """
-        # Call super with correct Odoo 19 arguments[cite: 1]
         super()._pre_dispatch(rule, args)
 
         path = request.httprequest.path
 
-        # 1. Allow essential system and auth paths[cite: 1]
+        # Always allow essential system, auth, and static paths
         for prefix in ALWAYS_ALLOWED_PATHS:
             if path.startswith(prefix):
                 return
 
-        # 2. Check subscription status[cite: 1]
-        status = request.env['ir.config_parameter'].sudo().get_param('saas.subscription_status', 'active')
-
-        if status == 'active' or status == 'warning':
+        # Allow all logout-related actions regardless of status
+        if 'logout' in path or 'session/destroy' in path:
             return
 
-        # 3. Handle 'stopped' status[cite: 1]
-        if request.httprequest.is_json:
-            try:
-                body = request.get_json_data()
-                method = body.get('params', {}).get('method', '')
+        # Read subscription status
+        status = request.env['ir.config_parameter'].sudo().get_param(
+            'saas.subscription_status', 'active'
+        )
 
-                # Block modification methods while allowing read-only UI loading[cite: 1]
-                if method in ('write', 'create', 'unlink', 'action_done'):
-                    raise Forbidden("Subscription suspended. Actions are restricted.")
-            except Exception:
-                pass
+        # active or warning: full access
+        if status in ('active', 'warning'):
+            return
+
+        # stopped: block write operations, allow read-only
+        if status == 'stopped':
+            if request.httprequest.is_json:
+                try:
+                    body = request.get_json_data()
+                    params = body.get('params', {})
+                    method = params.get('method', '')
+                    model = params.get('model', '')
+
+                    # Always allow user session / preference reads
+                    if model in ('res.users', 'res.lang') and method in ALLOWED_METHODS_WHEN_STOPPED:
+                        return
+
+                    # Allow all explicitly safe methods
+                    if method in ALLOWED_METHODS_WHEN_STOPPED:
+                        return
+
+                    # Block all write/create/delete/action methods
+                    if method in BLOCKED_METHODS_WHEN_STOPPED:
+                        raise Forbidden(
+                            "Subscription suspended. Write operations are restricted."
+                        )
+
+                except Forbidden:
+                    raise
+                except Exception:
+                    pass
