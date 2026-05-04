@@ -19,25 +19,34 @@ class IrHttp(models.AbstractModel):
 
     @classmethod
     def _pre_dispatch(cls, rule, args):
+        """
+        Odoo 19 compatible pre_dispatch.
+        Blocks modifications if status is 'stopped'.
+        """
+        # Call super with correct Odoo 19 arguments[cite: 1]
         super()._pre_dispatch(rule, args)
+
         path = request.httprequest.path
 
+        # 1. Allow essential system and auth paths[cite: 1]
         for prefix in ALWAYS_ALLOWED_PATHS:
             if path.startswith(prefix):
                 return
 
+        # 2. Check subscription status[cite: 1]
         status = request.env['ir.config_parameter'].sudo().get_param('saas.subscription_status', 'active')
 
-        # Only block actions if the status is explicitly 'stopped'
-        if status != 'stopped':
+        if status == 'active' or status == 'warning':
             return
 
+        # 3. Handle 'stopped' status[cite: 1]
         if request.httprequest.is_json:
             try:
                 body = request.get_json_data()
                 method = body.get('params', {}).get('method', '')
-                # Block modifying methods only
+
+                # Block modification methods while allowing read-only UI loading[cite: 1]
                 if method in ('write', 'create', 'unlink', 'action_done'):
-                    raise Forbidden("Subscription suspended. Please contact support.")
+                    raise Forbidden("Subscription suspended. Actions are restricted.")
             except Exception:
                 pass
