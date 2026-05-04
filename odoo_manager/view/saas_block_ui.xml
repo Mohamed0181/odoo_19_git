@@ -5,54 +5,48 @@
             <t t-set="saas_status" t-value="request.env['ir.config_parameter'].sudo().get_param('saas.subscription_status', 'active')"/>
 
             <t t-if="saas_status != 'active'">
-                <!-- Red Banner like Odoo.sh -->
+                <!-- Top Red Banner inspired by Odoo.sh[cite: 1] -->
                 <div id="saas_expired_banner"
                      style="
                         position: fixed;
                         top: 0; left: 0;
                         width: 100%;
-                        background: #ff4d4d;
+                        background: #d9534f; /* Odoo.sh Red */
                         color: white;
                         text-align: center;
-                        padding: 10px 0;
-                        font-size: 16px;
+                        padding: 12px 0;
+                        font-size: 15px;
                         font-weight: bold;
                         z-index: 999999;
-                        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
                         display: flex;
                         justify-content: center;
                         align-items: center;
-                        gap: 15px;
+                        gap: 20px;
+                        font-family: sans-serif;
                      ">
-                    <span style="font-size: 20px;">⚠️</span>
-                    <span>This subscription has expired. Please contact support to renew your service.</span>
-                    <a href="mailto:support@yourdomain.com"
+                    <span>⚠️ Your subscription has expired. Please contact support to restore full access.</span>
+                    <a href="mailto:support@optimum.com"
                        style="
                         background: white;
-                        color: #ff4d4d;
-                        padding: 4px 12px;
+                        color: #d9534f;
+                        padding: 5px 15px;
                         border-radius: 4px;
                         text-decoration: none;
-                        font-size: 13px;
+                        font-size: 12px;
+                        text-transform: uppercase;
                        ">Contact Support</a>
                 </div>
 
-                <!-- Global CSS to adjust the UI -->
                 <style>
-                    /* Push the entire web client down to make room for the banner */
-                    .o_web_client {
+                    /* Push the Odoo Navbar down to accommodate the banner[cite: 1] */
+                    .o_navbar, .o_web_client {
                         margin-top: 45px !important;
                     }
-
-                    /* Optional: Disable pointer events on the main content to prevent usage */
+                    /* Visual indicator that the system is restricted */
                     .o_action_manager {
-                        pointer-events: none !important;
-                        opacity: 0.7;
-                    }
-
-                    /* Ensure the banner is always visible */
-                    body {
-                        overflow: hidden;
+                        opacity: 0.85;
+                        pointer-events: none !important; /* Disables clicks[cite: 1] */
                     }
                 </style>
             </t>

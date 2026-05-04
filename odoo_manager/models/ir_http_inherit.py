@@ -10,37 +10,47 @@ ALWAYS_ALLOWED_PATHS = (
     '/favicon.ico',
 )
 
-
 class IrHttp(models.AbstractModel):
     _inherit = 'ir.http'
 
     @classmethod
-    def _pre_dispatch(cls):
+    def _pre_dispatch(cls, rule, args):
         """
-        Modified for Odoo 19 to support banner view without white screen.
+        Modified signature to accept rule and args for Odoo 19 compatibility.
+        Prevents TypeError while managing subscription states.
         """
-        # Call super first if needed, but in pre_dispatch usually we check our logic
+        # 1. Correct super call with required arguments
+        super()._pre_dispatch(rule, args)
+
         path = request.httprequest.path
 
-        # 1. Allow Essential Assets
+        # 2. Allow essential system assets and control paths
         for prefix in ALWAYS_ALLOWED_PATHS:
             if path.startswith(prefix):
                 return
 
-        # 2. Check Subscription Status
-        status = request.env['ir.config_parameter'].sudo().get_param('saas.subscription_status', 'active')
+        # 3. Retrieve status from system parameters
+        status = request.env['ir.config_parameter'].sudo().get_param(
+            'saas.subscription_status', 'active'
+        )
 
         if status == 'active':
             return
 
-        # 3. Handle Stopped State
-        # Allow UI rendering but block crucial actions
+        # 4. Handle 'stopped' state logic
         if request.httprequest.is_json:
-            # Check if this is a 'write', 'create' or 'unlink' call (simplified)
-            body = request.get_json_data()
-            method = body.get('params', {}).get('method', '')
+            try:
+                # We block only writing/modifying actions to allow the UI to load
+                body = request.get_json_data()
+                params = body.get('params', {})
+                method = params.get('method', '')
 
-            if method in ('write', 'create', 'unlink', 'action_done'):
-                raise Forbidden("Subscription expired. Action blocked.")
+                # Block operations that modify data
+                if method in ('write', 'create', 'unlink', 'action_done'):
+                    raise Forbidden("Subscription expired. Changes are not allowed.")
+            except Exception:
+                # Fallback for unexpected JSON structures
+                pass
 
-        # For GET requests, we let them pass so the user can see the App list and our Red Banner
+        # We do NOT raise Forbidden for GET requests here.
+        # This allows the Web Client to load and display the red banner.
