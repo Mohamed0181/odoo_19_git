@@ -3,13 +3,11 @@ from odoo import models
 from odoo.http import request
 from werkzeug.exceptions import Forbidden
 
-# Paths that are always accessible even if the subscription is stopped
-ALWAYS_ALLOWED_PREFIXES = (
-    '/web/static/',          # Static files (CSS, JS, Images)
-    '/saas/client/',         # SaaS manager control endpoints
-    '/web/manifest.json',    # Web manifest
+ALWAYS_ALLOWED_PATHS = (
+    '/web/static/',
+    '/saas/client/',
+    '/web/assets/',
     '/favicon.ico',
-    '/web/assets/',          # Bundled assets
 )
 
 
@@ -17,36 +15,32 @@ class IrHttp(models.AbstractModel):
     _inherit = 'ir.http'
 
     @classmethod
-    def _pre_dispatch(cls, rule, args):
+    def _pre_dispatch(cls):
         """
-        Intercepts requests before dispatching to check subscription status.
-        Odoo 18/19 compatible.
+        Modified for Odoo 19 to support banner view without white screen.
         """
-        super()._pre_dispatch(rule, args)
-
+        # Call super first if needed, but in pre_dispatch usually we check our logic
         path = request.httprequest.path
 
-        # Always allow essential system paths and control endpoints
-        for prefix in ALWAYS_ALLOWED_PREFIXES:
+        # 1. Allow Essential Assets
+        for prefix in ALWAYS_ALLOWED_PATHS:
             if path.startswith(prefix):
                 return
 
-        # Retrieve subscription status from system parameters
-        status = request.env['ir.config_parameter'].sudo().get_param(
-            'saas.subscription_status', 'active'
-        )
+        # 2. Check Subscription Status
+        status = request.env['ir.config_parameter'].sudo().get_param('saas.subscription_status', 'active')
 
         if status == 'active':
             return
 
-        # ── Subscription Stopped Logic ──────────────────────────────────────
-
-        # Block all JSON-RPC requests (data fetching, button clicks, etc.)
+        # 3. Handle Stopped State
+        # Allow UI rendering but block crucial actions
         if request.httprequest.is_json:
-            raise Forbidden(
-                "Subscription is stopped. Please contact support to renew."
-            )
+            # Check if this is a 'write', 'create' or 'unlink' call (simplified)
+            body = request.get_json_data()
+            method = body.get('params', {}).get('method', '')
 
-        # For standard HTTP GET requests (like loading /web), we let them pass
-        # This allows the saas_block_ui.xml template to render the overlay
-        # effectively hiding the Odoo interface while showing the block message.
+            if method in ('write', 'create', 'unlink', 'action_done'):
+                raise Forbidden("Subscription expired. Action blocked.")
+
+        # For GET requests, we let them pass so the user can see the App list and our Red Banner
