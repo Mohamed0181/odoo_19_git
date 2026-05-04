@@ -4,49 +4,56 @@
         <xpath expr="//body" position="inside">
             <t t-set="saas_status" t-value="request.env['ir.config_parameter'].sudo().get_param('saas.subscription_status', 'active')"/>
 
-            <t t-if="saas_status != 'active'">
-                <!-- Top Red Banner inspired by Odoo.sh[cite: 1] -->
+            <!-- Show banner only if logged in and status is not active -->
+            <t t-if="saas_status != 'active' and request.session.uid">
+                <!-- Red Maintenance Banner -->
                 <div id="saas_expired_banner"
                      style="
                         position: fixed;
                         top: 0; left: 0;
                         width: 100%;
-                        background: #d9534f; /* Odoo.sh Red */
+                        background: #d9534f;
                         color: white;
                         text-align: center;
-                        padding: 12px 0;
-                        font-size: 15px;
+                        padding: 10px 0;
+                        font-size: 14px;
                         font-weight: bold;
                         z-index: 999999;
-                        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
                         display: flex;
                         justify-content: center;
                         align-items: center;
-                        gap: 20px;
-                        font-family: sans-serif;
+                        gap: 15px;
+                        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
                      ">
-                    <span>⚠️ Your subscription has expired. Please contact support to restore full access.</span>
+                    <span>⚠️ Subscription Suspended - Full access is restricted</span>
                     <a href="mailto:support@optimum.com"
-                       style="
-                        background: white;
-                        color: #d9534f;
-                        padding: 5px 15px;
-                        border-radius: 4px;
-                        text-decoration: none;
-                        font-size: 12px;
-                        text-transform: uppercase;
-                       ">Contact Support</a>
+                       style="color: white; text-decoration: underline; font-size: 12px;">
+                        Contact Support
+                    </a>
                 </div>
 
                 <style>
-                    /* Push the Odoo Navbar down to accommodate the banner[cite: 1] */
-                    .o_navbar, .o_web_client {
-                        margin-top: 45px !important;
+                    /* Push Navbar down for the banner */
+                    .o_navbar {
+                        top: 40px !important;
                     }
-                    /* Visual indicator that the system is restricted */
-                    .o_action_manager {
-                        opacity: 0.85;
-                        pointer-events: none !important; /* Disables clicks[cite: 1] */
+
+                    /* Push main content down */
+                    .o_action_manager, .o_content {
+                        margin-top: 40px !important;
+                        pointer-events: none !important; /* Disable all clicks in content */
+                        opacity: 0.6;
+                    }
+
+                    /* KEEP NAVBAR WORKING: Ensure navbar stays clickable for Logout[cite: 1] */
+                    .o_navbar {
+                        pointer-events: auto !important;
+                        z-index: 1000;
+                    }
+
+                    /* Ensure the user menu dropdown is visible and clickable */
+                    .o_user_menu, .dropdown-menu {
+                        pointer-events: auto !important;
                     }
                 </style>
             </t>
