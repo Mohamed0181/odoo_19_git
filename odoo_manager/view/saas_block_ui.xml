@@ -52,8 +52,10 @@
                     </div>
                     <style>
                         #saas_warning_banner a:hover { background: #1f618d !important; }
-                        .o_navbar { top: 40px !important; }
-                        .o_action_manager, .o_content { margin-top: 40px !important; }
+                        /* Push the fixed main navbar down by banner height */
+                        .o_main_navbar { top: 40px !important; }
+                        /* Push content area down by banner + navbar height */
+                        .o_web_client { padding-top: 40px !important; }
                     </style>
                 </t>
 
@@ -99,53 +101,34 @@
                     <style>
                         #saas_stopped_banner a:hover { background: #a93226 !important; }
 
-                        /* Banner spacing */
-                        .o_navbar {
+                        /* Push the fixed main navbar down by banner height */
+                        .o_main_navbar {
                             top: 40px !important;
                             z-index: 10000 !important;
-                            pointer-events: auto !important;
-                        }
-
-                        /* Keep navbar fully interactive */
-                        .o_navbar *,
-                        .o_menu_brand,
-                        .o_user_menu,
-                        .o_main_navbar,
-                        .dropdown,
-                        .dropdown-menu,
-                        .dropdown-item,
-                        .o_user_menu .dropdown-toggle,
-                        a[data-action="logout"],
-                        .o_logout {
                             pointer-events: auto !important;
                             opacity: 1 !important;
                             filter: none !important;
                         }
 
-                        /* Block everything below the navbar */
-                        .o_action_manager,
-                        .o_content,
-                        .o_main_content,
-                        .o_view_controller {
-                            margin-top: 40px !important;
-                            pointer-events: none !important;
-                            user-select: none !important;
-                            opacity: 0.55;
-                            filter: grayscale(40%);
-                            transition: opacity 0.3s ease;
+                        /* Keep every element inside the navbar interactive */
+                        .o_main_navbar * {
+                            pointer-events: auto !important;
+                            opacity: 1 !important;
+                            filter: none !important;
                         }
 
-                        /* Overlay to reinforce the block visually */
-                        .o_action_manager::after {
-                            content: '';
-                            position: fixed;
-                            top: 80px;
-                            left: 0;
-                            width: 100%;
-                            height: 100%;
-                            background: rgba(255, 255, 255, 0.25);
-                            z-index: 9000;
-                            pointer-events: none;
+                        /* Push the whole web client down so navbar is not overlapped */
+                        .o_web_client {
+                            padding-top: 40px !important;
+                        }
+
+                        /* Block the content area only (below navbar) */
+                        .o_action_manager {
+                            pointer-events: none !important;
+                            user-select: none !important;
+                            opacity: 0.55 !important;
+                            filter: grayscale(40%) !important;
+                            transition: opacity 0.3s ease;
                         }
                     </style>
                 </t>
