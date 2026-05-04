@@ -9,18 +9,17 @@
                 <!-- 1. Warning State (Enterprise Yellow Style) -->
                 <t t-if="saas_status == 'warning'">
                     <div id="saas_warning_banner"
-                         style="position: fixed; top: 0; left: 0; width: 100%; background: #FCF8E3; color: #8A6D3B; border-bottom: 1px solid #FAEBCC; text-align: center; padding: 10px 0; font-size: 14px; z-index: 10001; display: flex; justify-content: center; align-items: center; gap: 15px; font-family: 'Segoe UI', Roboto, sans-serif;">
+                         style="position: fixed; top: 0; left: 0; width: 100%; background: #FCF8E3; color: #8A6D3B; border-bottom: 1px solid #FAEBCC; text-align: center; padding: 10px 0; font-size: 14px; z-index: 10001; display: flex; justify-content: center; align-items: center; gap: 15px; font-family: 'Roboto', sans-serif;">
                         <span style="font-size: 18px;">🔔</span>
                         <span><strong>Subscription Alert:</strong> Your database will expire soon. Please contact your administrator.</span>
                         <a href="mailto:support@optimum.com" style="color: #8A6D3B; text-decoration: underline; font-weight: bold;">Renew Now</a>
                     </div>
                     <style>
-                        /* Fixed: Push the Main Navbar down to show it under the banner */
-                        .o_main_navbar {
+                        /* Essential for Odoo 19: Push both the navbar and the content down */
+                        .o_main_navbar, .o_navbar {
                             top: 40px !important;
                         }
-                        /* Push the main application content down accordingly */
-                        .o_action_manager, .o_content, .o_control_panel {
+                        .o_action_manager, .o_content {
                             margin-top: 40px !important;
                         }
                     </style>
@@ -29,26 +28,26 @@
                 <!-- 2. Stopped State (Enterprise Red Style) -->
                 <t t-if="saas_status == 'stopped'">
                     <div id="saas_stopped_banner"
-                         style="position: fixed; top: 0; left: 0; width: 100%; background: #F2DEDE; color: #A94442; border-bottom: 1px solid #EBCCD1; text-align: center; padding: 10px 0; font-size: 14px; z-index: 10001; display: flex; justify-content: center; align-items: center; gap: 15px; font-family: 'Segoe UI', Roboto, sans-serif;">
+                         style="position: fixed; top: 0; left: 0; width: 100%; background: #F2DEDE; color: #A94442; border-bottom: 1px solid #EBCCD1; text-align: center; padding: 10px 0; font-size: 14px; z-index: 10001; display: flex; justify-content: center; align-items: center; gap: 15px; font-family: 'Roboto', sans-serif;">
                         <span style="font-size: 18px;">⚠️</span>
-                        <span><strong>Subscription Expired:</strong> Access to this database is currently restricted. Please contact support.</span>
+                        <span><strong>Subscription Expired:</strong> This database is currently restricted. Please contact support to restore access.</span>
                         <a href="mailto:support@optimum.com" style="color: #A94442; text-decoration: underline; font-weight: bold;">Contact Support</a>
                     </div>
                     <style>
-                        /* Keep navbar visible and ensure it remains interactive for logout */
-                        .o_main_navbar {
+                        /* Keep navbar accessible for logout while blocking the app */
+                        .o_main_navbar, .o_navbar {
                             top: 40px !important;
                             pointer-events: auto !important;
                             z-index: 10000 !important;
                         }
-                        /* Block app interaction while maintaining visual context */
-                        .o_action_manager, .o_content, .o_control_panel {
+                        /* Block the main application interface */
+                        .o_action_manager, .o_content {
                             margin-top: 40px !important;
                             pointer-events: none !important;
-                            opacity: 0.65;
-                            filter: grayscale(0.8);
+                            opacity: 0.6;
+                            filter: grayscale(1);
                         }
-                        /* Critical: Re-enable pointer events for dropdowns and logout menu */
+                        /* Ensure the user menu remains functional for logout */
                         .o_user_menu, .dropdown-menu, .o_main_navbar * {
                             pointer-events: auto !important;
                         }
