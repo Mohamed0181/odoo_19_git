@@ -6,11 +6,11 @@
 
             <t t-if="saas_status != 'active' and request.session.uid">
 
-                <!-- Warning State: Orange Banner, System remains usable[cite: 1] -->
+                <!-- 1. Warning Banner (Yellow/Orange) -->
                 <t t-if="saas_status == 'warning'">
                     <div id="saas_warning_banner"
-                         style="position: fixed; top: 0; left: 0; width: 100%; background: #f0ad4e; color: #fff; text-align: center; padding: 10px 0; font-size: 14px; font-weight: bold; z-index: 10001; box-shadow: 0 2px 5px rgba(0,0,0,0.15); display: flex; justify-content: center; align-items: center; gap: 15px; font-family: sans-serif;">
-                        <span>🔔 Subscription Alert: Your service will expire soon. Please renew to avoid interruption.</span>
+                         style="position: fixed; top: 0; left: 0; width: 100%; background: #f0ad4e; color: #fff; text-align: center; padding: 10px 0; font-size: 14px; font-weight: bold; z-index: 10001; box-shadow: 0 2px 5px rgba(0,0,0,0.15); display: flex; justify-content: center; align-items: center; gap: 15px;">
+                        <span>🔔 Your subscription is about to expire soon. Please renew to avoid service interruption.</span>
                         <a href="mailto:support@optimum.com" style="color: white; text-decoration: underline;">Renew Now</a>
                     </div>
                     <style>
@@ -19,31 +19,17 @@
                     </style>
                 </t>
 
-                <!-- Stopped State: Red Banner, Content disabled, Navbar enabled[cite: 1] -->
+                <!-- 2. Stopped Banner (Red) -->
                 <t t-if="saas_status == 'stopped'">
                     <div id="saas_stopped_banner"
-                         style="position: fixed; top: 0; left: 0; width: 100%; background: #d9534f; color: white; text-align: center; padding: 10px 0; font-size: 14px; font-weight: bold; z-index: 10001; display: flex; justify-content: center; align-items: center; gap: 15px; font-family: sans-serif;">
-                        <span>⚠️ Subscription Suspended: Full access is restricted. Contact support.</span>
+                         style="position: fixed; top: 0; left: 0; width: 100%; background: #d9534f; color: white; text-align: center; padding: 10px 0; font-size: 14px; font-weight: bold; z-index: 10001; display: flex; justify-content: center; align-items: center; gap: 15px;">
+                        <span>⚠️ Subscription Suspended - Access is restricted</span>
                         <a href="mailto:support@optimum.com" style="color: white; text-decoration: underline;">Contact Support</a>
                     </div>
                     <style>
-                        /* Keep Navbar interactive for Logout[cite: 1] */
-                        .o_navbar {
-                            top: 40px !important;
-                            pointer-events: auto !important;
-                            z-index: 10000 !important;
-                        }
-                        /* Disable main app interaction[cite: 1] */
-                        .o_action_manager, .o_content {
-                            margin-top: 40px !important;
-                            pointer-events: none !important;
-                            opacity: 0.65;
-                            filter: grayscale(40%);
-                        }
-                        /* Ensure dropdowns and user menu still work[cite: 1] */
-                        .o_navbar *, .o_user_menu, .dropdown-menu {
-                            pointer-events: auto !important;
-                        }
+                        .o_navbar { top: 40px !important; pointer-events: auto !important; z-index: 10000 !important; }
+                        .o_action_manager, .o_content { margin-top: 40px !important; pointer-events: none !important; opacity: 0.7; filter: grayscale(50%); }
+                        .o_navbar *, .o_user_menu, .dropdown-menu { pointer-events: auto !important; }
                     </style>
                 </t>
 
