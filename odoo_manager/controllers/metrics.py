@@ -1,25 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-SaaS Metrics Controller
-========================
-Exposes Prometheus-compatible /metrics endpoint for each Odoo client database.
-
-Usage by Prometheus:
-    GET http://<branch_container>:8069/metrics?db=<database_name>
-
-Fixes applied vs original:
-  [1] auth='none'  → no session/DB needed to reach the route.
-  [2] db= query param  → read from URL, not from cursor.
-  [3] Manual db_connect() → opens a real cursor to the target DB.
-  [4] Extra metrics: active users, installed modules count.
-"""
-
 import os
 import logging
 from odoo import http
 from odoo.http import request, Response
 from odoo.tools import config
 from odoo.sql_db import db_connect
+
+from odoo.addons.odoo_manager.models.ir_http_inherit import HTTP_METRICS
 
 _logger = logging.getLogger(__name__)
 
@@ -29,7 +16,6 @@ class SaasMetricsController(http.Controller):
     # -------------------------------------------------------------------------
     # Helpers
     # -------------------------------------------------------------------------
-
     def _get_dir_size(self, path):
         """Return total size of a directory tree in bytes."""
         total_size = 0
@@ -59,7 +45,6 @@ class SaasMetricsController(http.Controller):
     # -------------------------------------------------------------------------
     # Endpoint
     # -------------------------------------------------------------------------
-
     @http.route(
         '/metrics',
         type='http',
@@ -75,6 +60,7 @@ class SaasMetricsController(http.Controller):
               db: ['<database_name>']
         """
         metrics = []
+
         # FIX [2]: read db from query param; fallback to cursor db if available
         db_name = db or (
             request.env.cr.dbname
@@ -105,10 +91,11 @@ class SaasMetricsController(http.Controller):
 
         try:
             with conn.cursor() as cr:
-                #   Filestore size
+                # Filestore size
                 data_dir = config.get('data_dir', '/var/lib/odoo')
                 filestore_path = os.path.join(data_dir, 'filestore', db_name)
                 filestore_size = self._get_dir_size(filestore_path)
+
                 metrics += self._gauge(
                     'odoo_filestore_size_bytes',
                     'Total size of the Odoo filestore in bytes.',
@@ -116,9 +103,7 @@ class SaasMetricsController(http.Controller):
                     {'database': db_name},
                 )
 
-                # ==========================================
-                # 1. تفاصيل مجلدات الـ Filestore (Filestore Breakdown)
-                # ==========================================
+                # 1. Filestore Breakdown
                 if os.path.exists(filestore_path):
                     for entry in os.scandir(filestore_path):
                         if entry.is_dir():
@@ -130,11 +115,8 @@ class SaasMetricsController(http.Controller):
                                 {'database': db_name, 'folder': entry.name}
                             )
 
-                # ==========================================
-                # 2. تفاصيل جداول قاعدة البيانات (Database Breakdown)
-                # ==========================================
+                # 2. Database Breakdown
                 try:
-                    # نجلب أكبر 20 جدول من حيث المساحة لتجنب ثقل الاستعلام
                     cr.execute("""
                                SELECT relname as table_name, pg_total_relation_size(relid) as size
                                FROM pg_catalog.pg_statio_user_tables
@@ -150,7 +132,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: table size calculation failed: %s", e)
 
-                #   Active users
+                # Active users
                 try:
                     cr.execute(
                         "SELECT count(*) FROM res_users WHERE active = true"
@@ -165,7 +147,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: user count failed: %s", e)
 
-                #   Installed modules
+                # Installed modules
                 try:
                     cr.execute(
                         "SELECT count(*) FROM ir_module_module WHERE state = 'installed'"
@@ -180,7 +162,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: module count failed: %s", e)
 
-                #   Active IR cron jobs
+                # Active IR cron jobs
                 try:
                     cr.execute(
                         "SELECT count(*) FROM ir_cron WHERE active = true"
@@ -195,7 +177,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: cron count failed: %s", e)
 
-                #   Attachments count
+                # Attachments count
                 try:
                     cr.execute("SELECT count(*) FROM ir_attachment")
                     attach_count = cr.fetchone()[0]
@@ -216,6 +198,35 @@ class SaasMetricsController(http.Controller):
                 1,
                 {'reason': 'query_failed', 'database': db_name},
             )
+
+        # ==========================================
+        # HTTP Requests Metrics
+        # ==========================================
+        db_http_metrics = HTTP_METRICS.get(db_name, {'count': 0, 'duration_sum': 0.0})
+
+        # 1. Total Requests
+        metrics += self._gauge(
+            'odoo_http_requests_total',
+            'Total number of HTTP requests.',
+            db_http_metrics['count'],
+            {'database': db_name},
+        )
+
+        # 2. Duration Sum (for Average Time)
+        metrics += self._gauge(
+            'odoo_http_request_duration_seconds_sum',
+            'Total duration of HTTP requests in seconds.',
+            db_http_metrics['duration_sum'],
+            {'database': db_name},
+        )
+
+        # 3. Request Count (for Average Time)
+        metrics += self._gauge(
+            'odoo_http_request_duration_seconds_count',
+            'Number of HTTP requests for duration calculation.',
+            db_http_metrics['count'],
+            {'database': db_name},
+        )
 
         return self._text_response(metrics)
 
