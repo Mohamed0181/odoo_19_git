@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 import time
+import re
 from odoo import models
 from odoo.http import request
 from werkzeug.exceptions import Forbidden
 
 HTTP_METRICS = {}
+ROUTE_METRICS = {}
 
 ALWAYS_ALLOWED_PATHS = (
     '/web/static/',
@@ -101,5 +103,20 @@ class IrHttp(models.AbstractModel):
             HTTP_METRICS[db_name]['count'] += 1
             HTTP_METRICS[db_name]['duration_sum'] += duration
 
-            if request.httprequest.path.startswith('/xmlrpc'):
+            raw_path = request.httprequest.path
+            if raw_path.startswith('/xmlrpc'):
                 HTTP_METRICS[db_name]['xmlrpc_count'] += 1
+
+            clean_route = re.sub(r'/[0-9]+', '/<id>', raw_path)
+            route_key = f"{db_name}::{clean_route}"
+
+            if route_key not in ROUTE_METRICS:
+                ROUTE_METRICS[route_key] = {
+                    'db': db_name,
+                    'route': clean_route,
+                    'count': 0,
+                    'duration_sum': 0.0
+                }
+
+            ROUTE_METRICS[route_key]['count'] += 1
+            ROUTE_METRICS[route_key]['duration_sum'] += duration

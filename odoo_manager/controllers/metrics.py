@@ -6,7 +6,7 @@ from odoo.http import request, Response
 from odoo.tools import config
 from odoo.sql_db import db_connect
 
-from odoo.addons.odoo_manager.models.ir_http_inherit import HTTP_METRICS
+from odoo.addons.odoo_manager.models.ir_http_inherit import HTTP_METRICS, ROUTE_METRICS
 
 _logger = logging.getLogger(__name__)
 
@@ -66,6 +66,7 @@ class SaasMetricsController(http.Controller):
 
         try:
             with conn.cursor() as cr:
+                # 1. Filestore Metrics
                 data_dir = config.get('data_dir', '/var/lib/odoo')
                 filestore_path = os.path.join(data_dir, 'filestore', db_name)
                 filestore_size = self._get_dir_size(filestore_path)
@@ -81,6 +82,7 @@ class SaasMetricsController(http.Controller):
                                                    'Size of individual filestore folders', folder_size,
                                                    {'database': db_name, 'folder': entry.name})
 
+                # 2. Database Tables Metrics
                 try:
                     cr.execute("""
                                SELECT relname as table_name, pg_total_relation_size(relid) as size
@@ -93,6 +95,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: table size calculation failed: %s", e)
 
+                # 3. General Statistics
                 try:
                     cr.execute("SELECT count(*) FROM res_users WHERE active = true")
                     active_users = cr.fetchone()[0]
@@ -125,7 +128,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: attachment count failed: %s", e)
 
-                # Mails Calculation
+                # 4. Mails Metrics
                 try:
                     cr.execute("SELECT state, count(*) FROM mail_mail GROUP BY state")
                     for state, count in cr.fetchall():
@@ -138,7 +141,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: mails calculation failed: %s", e)
 
-                # Log Statistics Calculation (Optimized Single Pass)
+                # 5. Log Statistics (Optimized Single Pass)
                 try:
                     cr.execute("""
                                SELECT COUNT(*) FILTER (WHERE level IN ('ERROR', 'CRITICAL')) AS errors, COUNT(*) FILTER (WHERE level = 'WARNING') AS warnings, COUNT(*) FILTER (WHERE message ILIKE '%MemoryError%' OR message ILIKE '%Memory limit%') AS mem_odoo, COUNT(*) FILTER (WHERE message ILIKE '%out of memory%') AS mem_pg, COUNT(*) FILTER (WHERE message ILIKE '%could not serialize access%' OR message ILIKE '%SerializationFailure%') AS serialization
@@ -164,7 +167,7 @@ class SaasMetricsController(http.Controller):
             metrics += self._gauge('odoo_error', 'Odoo metrics error indicator.', 1,
                                    {'reason': 'query_failed', 'database': db_name})
 
-        # HTTP Requests & XML-RPC Metrics
+        # 6. Global HTTP & XML-RPC Metrics
         db_http_metrics = HTTP_METRICS.get(db_name, {'count': 0, 'duration_sum': 0.0, 'xmlrpc_count': 0})
 
         metrics += self._gauge('odoo_http_requests_total', 'Total number of HTTP requests.', db_http_metrics['count'],
@@ -176,6 +179,14 @@ class SaasMetricsController(http.Controller):
                                {'database': db_name})
         metrics += self._gauge('odoo_http_xmlrpc_total', 'Total XML-RPC requests.', db_http_metrics['xmlrpc_count'],
                                {'database': db_name})
+
+        # 7. Routes Duration Metrics
+        for key, data in ROUTE_METRICS.items():
+            if data['db'] == db_name:
+                metrics += self._gauge('odoo_http_route_duration_seconds_sum', 'Total duration per route',
+                                       data['duration_sum'], {'database': db_name, 'route': data['route']})
+                metrics += self._gauge('odoo_http_route_duration_seconds_count', 'Total requests per route',
+                                       data['count'], {'database': db_name, 'route': data['route']})
 
         return self._text_response(metrics)
 
