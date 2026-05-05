@@ -63,7 +63,7 @@ class SaasMetricsController(http.Controller):
     @http.route(
         '/metrics',
         type='http',
-        auth='none',          # FIX [1]: no session required
+        auth='none',  # FIX [1]: no session required
         methods=['GET'],
         csrf=False,
     )
@@ -75,14 +75,12 @@ class SaasMetricsController(http.Controller):
               db: ['<database_name>']
         """
         metrics = []
-
         # FIX [2]: read db from query param; fallback to cursor db if available
         db_name = db or (
             request.env.cr.dbname
             if (request.env and request.env.cr)
             else None
         )
-
         if not db_name:
             metrics += self._gauge(
                 'odoo_error',
@@ -107,7 +105,7 @@ class SaasMetricsController(http.Controller):
 
         try:
             with conn.cursor() as cr:
-                # ── Filestore size ─────────────────────────────────────────
+                #   Filestore size
                 data_dir = config.get('data_dir', '/var/lib/odoo')
                 filestore_path = os.path.join(data_dir, 'filestore', db_name)
                 filestore_size = self._get_dir_size(filestore_path)
@@ -118,7 +116,41 @@ class SaasMetricsController(http.Controller):
                     {'database': db_name},
                 )
 
-                # ── Active users ───────────────────────────────────────────
+                # ==========================================
+                # 1. تفاصيل مجلدات الـ Filestore (Filestore Breakdown)
+                # ==========================================
+                if os.path.exists(filestore_path):
+                    for entry in os.scandir(filestore_path):
+                        if entry.is_dir():
+                            folder_size = self._get_dir_size(entry.path)
+                            metrics += self._gauge(
+                                'odoo_filestore_folder_size_bytes',
+                                'Size of individual filestore folders',
+                                folder_size,
+                                {'database': db_name, 'folder': entry.name}
+                            )
+
+                # ==========================================
+                # 2. تفاصيل جداول قاعدة البيانات (Database Breakdown)
+                # ==========================================
+                try:
+                    # نجلب أكبر 20 جدول من حيث المساحة لتجنب ثقل الاستعلام
+                    cr.execute("""
+                               SELECT relname as table_name, pg_total_relation_size(relid) as size
+                               FROM pg_catalog.pg_statio_user_tables
+                               ORDER BY pg_total_relation_size(relid) DESC LIMIT 20
+                               """)
+                    for table_name, size in cr.fetchall():
+                        metrics += self._gauge(
+                            'odoo_db_table_size_bytes',
+                            'Size of database tables',
+                            size,
+                            {'database': db_name, 'table': table_name}
+                        )
+                except Exception as e:
+                    _logger.warning("SaasMetrics: table size calculation failed: %s", e)
+
+                #   Active users
                 try:
                     cr.execute(
                         "SELECT count(*) FROM res_users WHERE active = true"
@@ -133,7 +165,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: user count failed: %s", e)
 
-                # ── Installed modules ──────────────────────────────────────
+                #   Installed modules
                 try:
                     cr.execute(
                         "SELECT count(*) FROM ir_module_module WHERE state = 'installed'"
@@ -148,7 +180,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: module count failed: %s", e)
 
-                # ── Active IR cron jobs ────────────────────────────────────
+                #   Active IR cron jobs
                 try:
                     cr.execute(
                         "SELECT count(*) FROM ir_cron WHERE active = true"
@@ -163,7 +195,7 @@ class SaasMetricsController(http.Controller):
                 except Exception as e:
                     _logger.warning("SaasMetrics: cron count failed: %s", e)
 
-                # ── Attachments count ──────────────────────────────────────
+                #   Attachments count
                 try:
                     cr.execute("SELECT count(*) FROM ir_attachment")
                     attach_count = cr.fetchone()[0]
