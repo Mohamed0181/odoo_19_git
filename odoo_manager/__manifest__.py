@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    'name': 'Odoo Management',
+    'name': 'Odoo Management11',
     'version': '19.0.1.0.0',
     'category': 'Odoo Management',
     'summary': 'Control odoo instances and prevent module uninstallation',
