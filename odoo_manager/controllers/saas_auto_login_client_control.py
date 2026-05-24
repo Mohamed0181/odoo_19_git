@@ -103,41 +103,38 @@ class SaasAutoLoginController(http.Controller):
 
         return request.httprequest.remote_addr
 
-    def _is_ip_allowed(self, ip):
-        """
-        التحقق من أن الـ IP مسموح له
+   def _is_ip_allowed(self, ip):
+    allowed_ips = [
+        '127.0.0.1',
+        '::1',
+        'localhost',
+    ]
 
-        يمكنك تخصيص هذه الدالة حسب احتياجك:
-        - السماح لـ IPs محددة فقط
-        - السماح لـ ranges معينة
-        - الحظر من blacklist
-        """
-        # ✅ مثال 1: السماح لأي IP (غير آمن!)
-        # return True
+    # جلب IPs المسموحة من System Parameters
+    try:
+        allowed_param = request.env['ir.config_parameter'].sudo().get_param(
+            'saas.autologin.allowed_ips', ''
+        )
+        if allowed_param:
+            allowed_ips.extend([i.strip() for i in allowed_param.split(',')])
+    except:
+        pass
 
-        # ✅ مثال 2: السماح لـ localhost و IPs محددة
-        allowed_ips = [
-            '127.0.0.1',
-            '::1',
-            'localhost',
-            # أضف IPs السيرفرات بتاعتك هنا
+    if ip in allowed_ips:
+        return True
+
+    # ✅ التحقق من الشبكات الداخلية باستخدام ipaddress module (أدق وأشمل)
+    try:
+        import ipaddress
+        client_ip = ipaddress.ip_address(ip)
+        private_networks = [
+            ipaddress.ip_network('10.0.0.0/8'),
+            ipaddress.ip_network('192.168.0.0/16'),
+            ipaddress.ip_network('172.16.0.0/12'),  # ✅ يشمل 172.16 - 172.31 كلها
         ]
-
-        # جلب IPs المسموحة من System Parameters
-        try:
-            allowed_param = request.env['ir.config_parameter'].sudo().get_param(
-                'saas.autologin.allowed_ips', ''
-            )
-            if allowed_param:
-                allowed_ips.extend([ip.strip() for ip in allowed_param.split(',')])
-        except:
-            pass
-
-        # التحقق من الشبكات المحلية
-        if ip.startswith(('192.168.', '10.', '172.16.', '172.17.')):
-            return True
-
-        return ip in allowed_ips
+        return any(client_ip in network for network in private_networks)
+    except ValueError:
+        return False
 
     @http.route('/saas/generate_auth_link', type='http', auth='none', methods=['POST'], csrf=False)
     def generate_auth_link(self, **kwargs):
