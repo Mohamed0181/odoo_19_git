@@ -62,19 +62,15 @@ class SaasAutoLoginController(http.Controller):
             bool: True إذا كانت كلمة المرور صحيحة
         """
         try:
-            # ✅ في Odoo 19، نستخدم authenticate API
             import xmlrpc.client
 
-            # الحصول على الـ URL الحالي
             base_url = request.httprequest.host_url.rstrip('/')
-
-            # محاولة المصادقة
             common = xmlrpc.client.ServerProxy(f'{base_url}/xmlrpc/2/common')
 
             try:
                 uid = common.authenticate(
                     db_name,
-                    'admin',  # اسم المستخدم
+                    'admin',
                     admin_password,
                     {}
                 )
@@ -96,45 +92,48 @@ class SaasAutoLoginController(http.Controller):
 
     def _get_client_ip(self):
         """الحصول على IP العميل الحقيقي"""
-        # تحقق من X-Forwarded-For (في حالة استخدام Proxy/Load Balancer)
         forwarded_for = request.httprequest.headers.get('X-Forwarded-For')
         if forwarded_for:
             return forwarded_for.split(',')[0].strip()
 
         return request.httprequest.remote_addr
 
-   def _is_ip_allowed(self, ip):
-    allowed_ips = [
-        '127.0.0.1',
-        '::1',
-        'localhost',
-    ]
-
-    # جلب IPs المسموحة من System Parameters
-    try:
-        allowed_param = request.env['ir.config_parameter'].sudo().get_param(
-            'saas.autologin.allowed_ips', ''
-        )
-        if allowed_param:
-            allowed_ips.extend([i.strip() for i in allowed_param.split(',')])
-    except:
-        pass
-
-    if ip in allowed_ips:
-        return True
-
-    # ✅ التحقق من الشبكات الداخلية باستخدام ipaddress module (أدق وأشمل)
-    try:
-        import ipaddress
-        client_ip = ipaddress.ip_address(ip)
-        private_networks = [
-            ipaddress.ip_network('10.0.0.0/8'),
-            ipaddress.ip_network('192.168.0.0/16'),
-            ipaddress.ip_network('172.16.0.0/12'),  # ✅ يشمل 172.16 - 172.31 كلها
+    def _is_ip_allowed(self, ip):
+        """
+        التحقق من أن الـ IP مسموح له
+        يسمح بـ localhost + كل الشبكات الداخلية (Docker included)
+        """
+        allowed_ips = [
+            '127.0.0.1',
+            '::1',
+            'localhost',
         ]
-        return any(client_ip in network for network in private_networks)
-    except ValueError:
-        return False
+
+        # جلب IPs المسموحة من System Parameters
+        try:
+            allowed_param = request.env['ir.config_parameter'].sudo().get_param(
+                'saas.autologin.allowed_ips', ''
+            )
+            if allowed_param:
+                allowed_ips.extend([i.strip() for i in allowed_param.split(',')])
+        except Exception:
+            pass
+
+        if ip in allowed_ips:
+            return True
+
+        # ✅ التحقق من الشبكات الداخلية باستخدام ipaddress (يشمل كل Docker subnets)
+        try:
+            import ipaddress
+            client_ip = ipaddress.ip_address(ip)
+            private_networks = [
+                ipaddress.ip_network('10.0.0.0/8'),       # Class A private
+                ipaddress.ip_network('192.168.0.0/16'),   # Class C private
+                ipaddress.ip_network('172.16.0.0/12'),    # ✅ يشمل 172.16.x.x → 172.31.x.x (Docker range)
+            ]
+            return any(client_ip in network for network in private_networks)
+        except ValueError:
+            return False
 
     @http.route('/saas/generate_auth_link', type='http', auth='none', methods=['POST'], csrf=False)
     def generate_auth_link(self, **kwargs):
@@ -170,7 +169,7 @@ class SaasAutoLoginController(http.Controller):
                     user_id = data.get('user_id')
                     admin_password = data.get('admin_password')
                     _logger.info("📥 Data from JSON body: user_id=%s", user_id)
-                except:
+                except Exception:
                     pass
 
             if not user_id:
@@ -188,7 +187,7 @@ class SaasAutoLoginController(http.Controller):
             user_id = int(user_id)
             current_db = request.env.cr.dbname
 
-            # ✅ 3. التحقق من كلمة مرور الأدمن (مهم جداً!)
+            # ✅ 3. التحقق من كلمة مرور الأدمن
             if not self._verify_admin_password(admin_password, current_db):
                 _logger.error("❌ Invalid admin password from IP: %s", client_ip)
                 return request.make_json_response({
@@ -217,7 +216,7 @@ class SaasAutoLoginController(http.Controller):
                 user_id=user_id,
                 user_login=user.login,
                 db_name=current_db,
-                expires_minutes=2  # ✅ تقليل المدة لـ 2 دقيقة
+                expires_minutes=2
             )
 
             base = request.httprequest.host_url.rstrip('/')
@@ -293,8 +292,6 @@ class SaasAutoLoginController(http.Controller):
             # Generate session token properly
             from odoo.service import security
             request.session.session_token = security.compute_session_token(request.session, request.env)
-
-            # NOTE: We removed request.session.modified = True as it causes AttributeError in Odoo 19
 
             _logger.info("✅ Autologin SUCCESS for user: %s (ID: %d) from IP: %s",
                          user_login, user_id, client_ip)
